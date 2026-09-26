@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'home_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -32,13 +33,11 @@ class WelcomeScreen extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
             children: [
-              // nội dung
               Expanded(
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ví tiền
                       Container(
                         width: 100,
                         height: 100,
@@ -69,8 +68,6 @@ class WelcomeScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 24),
-
-                      // tiêu đề
                       const Text(
                         'Expense Manager',
                         style: TextStyle(
@@ -80,8 +77,6 @@ class WelcomeScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-
-                      // mô tả
                       const Text(
                         'Quản lý chi tiêu cá nhân\nđơn giản và hiệu quả',
                         textAlign: TextAlign.center,
@@ -95,8 +90,6 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
-              // nút bắt đầu
               Padding(
                 padding: const EdgeInsets.only(bottom: 32.0),
                 child: SizedBox(
@@ -104,7 +97,10 @@ class WelcomeScreen extends StatelessWidget {
                   height: 56,
                   child: ElevatedButton(
                     onPressed: () {
-                      // TODO: chuyển sang màn hình tiếp theo
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1D4ED8),
