@@ -7,6 +7,7 @@ class Transaction {
   final int amount; // dương: thu nhập, âm: chi tiêu
   final IconData icon;
   final Color iconBg;
+  final String? note;
 
   Transaction({
     required this.title,
@@ -14,6 +15,7 @@ class Transaction {
     required this.amount,
     required this.icon,
     required this.iconBg,
+    this.note,
   });
 }
 
@@ -73,15 +75,37 @@ class _HomeScreenState extends State<HomeScreen> {
   int get _balance => _totalIncome - _totalExpense;
 
   Future<void> _openAddTransaction() async {
-    final result = await Navigator.push<Transaction>(
+    final result = await Navigator.push<TransactionFormResult>(
       context,
       MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
     );
-    if (result != null) {
+    if (result != null && result.transaction != null) {
       setState(() {
-        _transactions.insert(0, result);
+        _transactions.insert(0, result.transaction!);
       });
     }
+  }
+
+  Future<void> _openEditTransaction(Transaction transaction) async {
+    final result = await Navigator.push<TransactionFormResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddTransactionScreen(existingTransaction: transaction),
+      ),
+    );
+
+    if (result == null) return;
+
+    setState(() {
+      if (result.isDelete) {
+        _transactions.remove(transaction);
+      } else if (result.transaction != null) {
+        final index = _transactions.indexOf(transaction);
+        if (index != -1) {
+          _transactions[index] = result.transaction!;
+        }
+      }
+    });
   }
 
   @override
@@ -132,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Thẻ số dư (đè lên header, kéo lên trên)
+            // Thẻ số dư
             Transform.translate(
               offset: const Offset(0, -40),
               child: Padding(
@@ -162,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            '${_formatMoney(_balance).replaceFirst('+', '')}',
+                            _formatMoney(_balance).replaceFirst('+', ''),
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -195,7 +219,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Thu nhập / Chi tiêu
                     Row(
                       children: [
                         Expanded(
@@ -223,7 +246,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Chi tiêu gần đây
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -240,9 +262,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
-                    ..._transactions.map((t) => _TransactionTile(
-                      transaction: t,
-                      formattedAmount: _formatMoney(t.amount),
+                    ..._transactions.map((t) => GestureDetector(
+                      onTap: () => _openEditTransaction(t),
+                      child: _TransactionTile(
+                        transaction: t,
+                        formattedAmount: _formatMoney(t.amount),
+                      ),
                     )),
                     const SizedBox(height: 80),
                   ],
@@ -264,8 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
         items: const [
-          BottomNavigationBarItem(
-              icon: Icon(Icons.home), label: 'Trang chủ'),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Trang chủ'),
           BottomNavigationBarItem(
               icon: Icon(Icons.list_alt), label: 'Giao dịch'),
           BottomNavigationBarItem(
@@ -377,7 +401,8 @@ class _TransactionTile extends StatelessWidget {
             formattedAmount,
             style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: isIncome ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+              color:
+              isIncome ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
             ),
           ),
         ],

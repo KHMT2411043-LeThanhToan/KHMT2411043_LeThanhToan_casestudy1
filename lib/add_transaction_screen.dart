@@ -23,17 +23,30 @@ const List<CategoryOption> incomeCategories = [
   CategoryOption('Khác', Icons.category, Color(0xFF607D8B)),
 ];
 
+/// Kết quả trả về khi bấm Lưu (thêm mới/cập nhật) hoặc Xóa (chỉ ở chế độ sửa)
+class TransactionFormResult {
+  final Transaction? transaction; // null nếu người dùng chọn Xóa
+  final bool isDelete;
+  TransactionFormResult({this.transaction, this.isDelete = false});
+}
+
 class AddTransactionScreen extends StatefulWidget {
-  const AddTransactionScreen({super.key});
+  /// Nếu [existingTransaction] được truyền vào => màn hình chạy ở chế độ SỬA.
+  /// Nếu để null => chạy ở chế độ THÊM MỚI.
+  final Transaction? existingTransaction;
+
+  const AddTransactionScreen({super.key, this.existingTransaction});
+
+  bool get isEditMode => existingTransaction != null;
 
   @override
   State<AddTransactionScreen> createState() => _AddTransactionScreenState();
 }
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
-  bool _isExpense = true;
+  late bool _isExpense;
   CategoryOption? _selectedCategory;
-  DateTime _selectedDate = DateTime.now();
+  late DateTime _selectedDate;
 
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
@@ -41,7 +54,46 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedCategory = expenseCategories.first;
+
+    final existing = widget.existingTransaction;
+
+    if (existing != null) {
+      // Chế độ SỬA: điền sẵn dữ liệu cũ
+      _isExpense = existing.amount < 0;
+      _selectedDate = _parseDate(existing.date);
+      _amountController.text = _formatNumber(existing.amount.abs());
+      _noteController.text = existing.note ?? '';
+
+      final list = _isExpense ? expenseCategories : incomeCategories;
+      _selectedCategory = list.firstWhere(
+            (c) => c.name == existing.title,
+        orElse: () => list.first,
+      );
+    } else {
+      // Chế độ THÊM MỚI
+      _isExpense = true;
+      _selectedDate = DateTime.now();
+      _selectedCategory = expenseCategories.first;
+    }
+  }
+
+  DateTime _parseDate(String ddMMyyyy) {
+    final parts = ddMMyyyy.split('/');
+    return DateTime(
+      int.parse(parts[2]),
+      int.parse(parts[1]),
+      int.parse(parts[0]),
+    );
+  }
+
+  String _formatNumber(int value) {
+    final str = value.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < str.length; i++) {
+      if (i != 0 && (str.length - i) % 3 == 0) buffer.write('.');
+      buffer.write(str[i]);
+    }
+    return buffer.toString();
   }
 
   @override
@@ -83,29 +135,67 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       amount: _isExpense ? -amount : amount,
       icon: _selectedCategory!.icon,
       iconBg: _selectedCategory!.color,
+      note: _noteController.text.trim().isEmpty
+          ? null
+          : _noteController.text.trim(),
     );
 
-    Navigator.pop(context, transaction);
+    Navigator.pop(context, TransactionFormResult(transaction: transaction));
+  }
+
+  void _confirmDelete() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa giao dịch'),
+        content: const Text('Bạn có chắc muốn xóa giao dịch này không?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx); // đóng dialog
+              Navigator.pop(
+                context,
+                TransactionFormResult(isDelete: true),
+              ); // đóng màn hình sửa, trả kết quả xóa
+            },
+            child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isEdit = widget.isEditMode;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: const Text(
-          'Thêm giao dịch',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        title: Text(
+          isEdit ? 'Sửa giao dịch' : 'Thêm giao dịch',
+          style: const TextStyle(
+              color: Colors.black, fontWeight: FontWeight.bold),
         ),
+        actions: [
+          if (isEdit)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              onPressed: _confirmDelete,
+            ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: ListView(
           children: [
-            // Toggle Chi tiêu / Thu nhập
             Row(
               children: [
                 Expanded(
@@ -156,7 +246,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                           CircleAvatar(
                             radius: 14,
                             backgroundColor: cat.color,
-                            child: Icon(cat.icon, size: 16, color: Colors.white),
+                            child:
+                            Icon(cat.icon, size: 16, color: Colors.white),
                           ),
                           const SizedBox(width: 10),
                           Text(cat.name),
@@ -194,8 +285,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             InkWell(
               onTap: _pickDate,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 16),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
                 decoration: BoxDecoration(
                   border: Border.all(color: Colors.grey.shade300),
                   borderRadius: BorderRadius.circular(12),
