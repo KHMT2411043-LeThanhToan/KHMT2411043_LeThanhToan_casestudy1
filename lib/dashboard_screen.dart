@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'home_screen.dart' show Transaction;
+import 'database_helper.dart';
+import 'transaction_model.dart';
 import 'add_transaction_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -13,48 +14,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedTab = 0;
   bool _isBalanceVisible = true;
   int _bannerPage = 0;
+  bool _isLoading = true;
 
-  final List<Transaction> _transactions = [
-    Transaction(
-      title: 'Ăn uống',
-      date: '03/09/2024',
-      amount: -50000,
-      icon: Icons.restaurant,
-      iconBg: const Color(0xFFF5A623),
-      note: 'Ăn trưa',
-    ),
-    Transaction(
-      title: 'Di chuyển',
-      date: '03/09/2024',
-      amount: -100000,
-      icon: Icons.directions_car,
-      iconBg: const Color(0xFF4A90D9),
-      note: 'Xăng xe',
-    ),
-    Transaction(
-      title: 'Lương',
-      date: '01/09/2024',
-      amount: 8000000,
-      icon: Icons.savings,
-      iconBg: const Color(0xFF43A047),
-      note: 'Lương tháng 9',
-    ),
-    Transaction(
-      title: 'Mua sắm',
-      date: '31/08/2024',
-      amount: -300000,
-      icon: Icons.shopping_cart,
-      iconBg: const Color(0xFF8E44AD),
-    ),
-    Transaction(
-      title: 'Khác',
-      date: '30/08/2024',
-      amount: -500000,
-      icon: Icons.school,
-      iconBg: const Color(0xFF16A085),
-      note: 'Học phí',
-    ),
-  ];
+  List<TransactionRecord> _transactions = [];
+  int _totalIncome = 0;
+  int _totalExpense = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+
+    final rows = await DatabaseHelper.instance.getAllTransactions();
+    final income = await DatabaseHelper.instance.getTotalIncome();
+    final expense = await DatabaseHelper.instance.getTotalExpense();
+
+    setState(() {
+      _transactions = rows.map((e) => TransactionRecord.fromMap(e)).toList();
+      _totalIncome = income;
+      _totalExpense = expense;
+      _isLoading = false;
+    });
+  }
 
   String _formatMoney(int value) {
     final isNegative = value < 0;
@@ -67,50 +52,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '${isNegative ? '-' : '+'}${buffer.toString()} đ';
   }
 
-  int get _totalIncome => _transactions
-      .where((t) => t.amount > 0)
-      .fold(0, (sum, t) => sum + t.amount);
-
-  int get _totalExpense => _transactions
-      .where((t) => t.amount < 0)
-      .fold(0, (sum, t) => sum + t.amount.abs());
-
-  int get _balance => 5000000 + (_totalIncome - _totalExpense) - 8000000 + 950000;
-  // Ghi chú: số dư ban đầu mockup là 5.000.000đ cố định trước khi có giao dịch mẫu;
-  // nếu muốn số dư tự tính hoàn toàn theo giao dịch, dùng: _totalIncome - _totalExpense
-
   Future<void> _openAddTransaction() async {
-    final result = await Navigator.push<TransactionFormResult>(
+    final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => const AddTransactionScreen()),
     );
-    if (result != null && result.transaction != null) {
-      setState(() {
-        _transactions.insert(0, result.transaction!);
-      });
+    if (result == true) {
+      _loadData();
     }
   }
 
-  Future<void> _openEditTransaction(Transaction transaction) async {
-    final result = await Navigator.push<TransactionFormResult>(
+  Future<void> _openEditTransaction(TransactionRecord transaction) async {
+    final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => AddTransactionScreen(existingTransaction: transaction),
       ),
     );
-
-    if (result == null) return;
-
-    setState(() {
-      if (result.isDelete) {
-        _transactions.remove(transaction);
-      } else if (result.transaction != null) {
-        final index = _transactions.indexOf(transaction);
-        if (index != -1) {
-          _transactions[index] = result.transaction!;
-        }
-      }
-    });
+    if (result == true) {
+      _loadData();
+    }
   }
 
   @override
@@ -118,7 +79,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       body: SafeArea(
-        child: Column(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
@@ -128,7 +91,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const Icon(Icons.menu, size: 26),
                   const Text(
                     'Quản lý thu chi',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   Stack(
                     clipBehavior: Clip.none,
@@ -143,9 +107,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             color: Colors.red,
                             shape: BoxShape.circle,
                           ),
-                          child: const Text(
-                            '3',
-                            style: TextStyle(
+                          child: Text(
+                            '${_transactions.length}',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -158,121 +122,140 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
-
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 190,
-                      child: PageView(
-                        onPageChanged: (i) => setState(() => _bannerPage = i),
-                        children: [
-                          _buildBalanceBanner(),
-                          _buildBalanceBanner(),
-                          _buildBalanceBanner(),
-                          _buildBalanceBanner(),
-                        ],
+              child: RefreshIndicator(
+                onRefresh: _loadData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 190,
+                        child: PageView(
+                          onPageChanged: (i) =>
+                              setState(() => _bannerPage = i),
+                          children: [
+                            _buildBalanceBanner(),
+                            _buildBalanceBanner(),
+                            _buildBalanceBanner(),
+                            _buildBalanceBanner(),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(4, (i) {
-                          final active = i == _bannerPage;
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            width: active ? 18 : 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? const Color(0xFF2563EB)
-                                  : Colors.grey.shade300,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          );
-                        }),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _SummaryCard(
-                            bgColor: const Color(0xFFE3F5E9),
-                            icon: Icons.arrow_downward,
-                            iconColor: const Color(0xFF2E7D32),
-                            label: 'TỔNG THU NHẬP',
-                            value: _formatMoney(_totalIncome),
-                            valueColor: const Color(0xFF2E7D32),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: _SummaryCard(
-                            bgColor: const Color(0xFFFBE4E4),
-                            icon: Icons.arrow_upward,
-                            iconColor: const Color(0xFFC62828),
-                            label: 'TỔNG CHI TIÊU',
-                            value: _formatMoney(-_totalExpense),
-                            valueColor: const Color(0xFFC62828),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Giao dịch gần đây',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {},
-                          child: const Text('Xem tất cả'),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          for (int i = 0; i < _transactions.length; i++)
-                            GestureDetector(
-                              onTap: () =>
-                                  _openEditTransaction(_transactions[i]),
-                              child: _TransactionRow(
-                                transaction: _transactions[i],
-                                formattedAmount:
-                                _formatMoney(_transactions[i].amount),
-                                showDivider: i != _transactions.length - 1,
+                      const SizedBox(height: 10),
+                      Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(4, (i) {
+                            final active = i == _bannerPage;
+                            return Container(
+                              margin:
+                              const EdgeInsets.symmetric(horizontal: 3),
+                              width: active ? 18 : 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? const Color(0xFF2563EB)
+                                    : Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(3),
                               ),
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _SummaryCard(
+                              bgColor: const Color(0xFFE3F5E9),
+                              icon: Icons.arrow_downward,
+                              iconColor: const Color(0xFF2E7D32),
+                              label: 'TỔNG THU NHẬP',
+                              value: _formatMoney(_totalIncome),
+                              valueColor: const Color(0xFF2E7D32),
                             ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: _SummaryCard(
+                              bgColor: const Color(0xFFFBE4E4),
+                              icon: Icons.arrow_upward,
+                              iconColor: const Color(0xFFC62828),
+                              label: 'TỔNG CHI TIÊU',
+                              value: _formatMoney(-_totalExpense),
+                              valueColor: const Color(0xFFC62828),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 90),
-                  ],
+                      const SizedBox(height: 24),
+
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Giao dịch gần đây',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {},
+                            child: const Text('Xem tất cả'),
+                          ),
+                        ],
+                      ),
+
+                      if (_transactions.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: Center(
+                            child: Text(
+                              'Chưa có giao dịch nào.\nBấm nút + để thêm mới.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey.shade500),
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              for (int i = 0;
+                              i < _transactions.length;
+                              i++)
+                                GestureDetector(
+                                  onTap: () => _openEditTransaction(
+                                      _transactions[i]),
+                                  child: _TransactionRow(
+                                    transaction: _transactions[i],
+                                    showDivider:
+                                    i != _transactions.length - 1,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 90),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -302,6 +285,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildBalanceBanner() {
+    final balance = _totalIncome - _totalExpense;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 2),
       padding: const EdgeInsets.all(24),
@@ -354,8 +338,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 12),
               Text(
                 _isBalanceVisible
-                    ? _formatMoney(_totalIncome - _totalExpense)
-                    .replaceFirst('+', '')
+                    ? _formatMoney(balance).replaceFirst('+', '')
                     : '••••••••',
                 style: const TextStyle(
                   color: Colors.white,
@@ -435,22 +418,30 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _TransactionRow extends StatelessWidget {
-  final Transaction transaction;
-  final String formattedAmount;
+  final TransactionRecord transaction;
   final bool showDivider;
 
   const _TransactionRow({
     required this.transaction,
-    required this.formattedAmount,
     required this.showDivider,
   });
 
+  String _formatMoney(int value) {
+    final isNegative = value < 0;
+    final abs = value.abs().toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < abs.length; i++) {
+      if (i != 0 && (abs.length - i) % 3 == 0) buffer.write('.');
+      buffer.write(abs[i]);
+    }
+    return '${isNegative ? '-' : '+'}${buffer.toString()} đ';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isIncome = transaction.amount > 0;
     final displayTitle = transaction.note?.isNotEmpty == true
         ? transaction.note!
-        : transaction.title;
+        : transaction.categoryName;
 
     return Column(
       children: [
@@ -460,7 +451,7 @@ class _TransactionRow extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 22,
-                backgroundColor: transaction.iconBg,
+                backgroundColor: transaction.color,
                 child: Icon(transaction.icon, color: Colors.white),
               ),
               const SizedBox(width: 12),
@@ -479,7 +470,7 @@ class _TransactionRow extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          transaction.title,
+                          transaction.categoryName,
                           style: const TextStyle(
                               color: Colors.grey, fontSize: 12.5),
                         ),
@@ -495,11 +486,11 @@ class _TransactionRow extends StatelessWidget {
                 ),
               ),
               Text(
-                formattedAmount,
+                _formatMoney(transaction.signedAmount),
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 15.5,
-                  color: isIncome
+                  color: transaction.isIncome
                       ? const Color(0xFF2E7D32)
                       : const Color(0xFFC62828),
                 ),
@@ -508,7 +499,8 @@ class _TransactionRow extends StatelessWidget {
           ),
         ),
         if (showDivider)
-          Divider(height: 1, indent: 14, endIndent: 14, color: Colors.grey.shade200),
+          Divider(
+              height: 1, indent: 14, endIndent: 14, color: Colors.grey.shade200),
       ],
     );
   }
