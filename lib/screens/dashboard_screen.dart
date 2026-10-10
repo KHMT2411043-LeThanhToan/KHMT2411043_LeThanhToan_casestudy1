@@ -3,10 +3,12 @@ import '../models/transaction_model.dart';
 import '../repositories/transaction_repository.dart';
 import 'add_transaction_screen.dart';
 import 'edit_transaction_screen.dart';
-import 'transaction_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  /// Được gọi khi bấm "Xem tất cả" (MainShell dùng để chuyển sang tab Giao dịch).
+  final VoidCallback? onSeeAll;
+
+  const DashboardScreen({super.key, this.onSeeAll});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -17,7 +19,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final _repo = TransactionRepository.instance;
 
-  int _selectedTab = 0;
   bool _isBalanceVisible = true;
   int _bannerPage = 0;
   bool _isLoading = true;
@@ -79,14 +80,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (result == true) {
       _loadData();
     }
-  }
-
-  Future<void> _openTransactionList() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const TransactionListScreen()),
-    );
-    _loadData(); // có thể đã thêm/sửa/xóa bên trong danh sách
   }
 
   List<TransactionRecord> get _recentTransactions =>
@@ -224,7 +217,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: _openTransactionList,
+                            onPressed: widget.onSeeAll,
                             child: const Text('Xem tất cả'),
                           ),
                         ],
@@ -284,26 +277,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: const Color(0xFF2563EB),
         onPressed: _openAddTransaction,
         child: const Icon(Icons.add, color: Colors.white),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedTab,
-        onTap: (i) {
-          if (i == 1) {
-            _openTransactionList(); // mở danh sách, giữ tab Trang chủ
-          } else {
-            setState(() => _selectedTab = i);
-          }
-        },
-        selectedItemColor: const Color(0xFF2563EB),
-        unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Trang chủ'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.description_outlined), label: 'Giao dịch'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.pie_chart_outline), label: 'Thống kê'),
-        ],
       ),
     );
   }
