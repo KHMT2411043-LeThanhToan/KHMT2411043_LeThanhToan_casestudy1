@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'database_helper.dart';
-import 'transaction_model.dart';
+import '../models/transaction_model.dart';
+import '../repositories/transaction_repository.dart';
 import 'add_transaction_screen.dart';
+import 'edit_transaction_screen.dart';
+import 'transaction_list_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -11,6 +13,10 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  static const int _recentLimit = 5;
+
+  final _repo = TransactionRepository.instance;
+
   int _selectedTab = 0;
   bool _isBalanceVisible = true;
   int _bannerPage = 0;
@@ -29,12 +35,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    final rows = await DatabaseHelper.instance.getAllTransactions();
-    final income = await DatabaseHelper.instance.getTotalIncome();
-    final expense = await DatabaseHelper.instance.getTotalExpense();
+    final transactions = await _repo.getAll();
+    final income = await _repo.totalIncome();
+    final expense = await _repo.totalExpense();
 
+    if (!mounted) return;
     setState(() {
-      _transactions = rows.map((e) => TransactionRecord.fromMap(e)).toList();
+      _transactions = transactions;
       _totalIncome = income;
       _totalExpense = expense;
       _isLoading = false;
@@ -66,13 +73,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => AddTransactionScreen(existingTransaction: transaction),
+        builder: (_) => EditTransactionScreen(transaction: transaction),
       ),
     );
     if (result == true) {
       _loadData();
     }
   }
+
+  Future<void> _openTransactionList() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TransactionListScreen()),
+    );
+    _loadData(); // có thể đã thêm/sửa/xóa bên trong danh sách
+  }
+
+  List<TransactionRecord> get _recentTransactions =>
+      _transactions.take(_recentLimit).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +224,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () {},
+                            onPressed: _openTransactionList,
                             child: const Text('Xem tất cả'),
                           ),
                         ],
@@ -230,7 +248,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
+                                color: Colors.black.withValues(alpha: 0.04),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               ),
@@ -239,15 +257,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: Column(
                             children: [
                               for (int i = 0;
-                              i < _transactions.length;
+                              i < _recentTransactions.length;
                               i++)
                                 GestureDetector(
                                   onTap: () => _openEditTransaction(
-                                      _transactions[i]),
+                                      _recentTransactions[i]),
                                   child: _TransactionRow(
-                                    transaction: _transactions[i],
+                                    transaction: _recentTransactions[i],
                                     showDivider:
-                                    i != _transactions.length - 1,
+                                    i != _recentTransactions.length - 1,
                                   ),
                                 ),
                             ],
@@ -269,7 +287,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedTab,
-        onTap: (i) => setState(() => _selectedTab = i),
+        onTap: (i) {
+          if (i == 1) {
+            _openTransactionList(); // mở danh sách, giữ tab Trang chủ
+          } else {
+            setState(() => _selectedTab = i);
+          }
+        },
         selectedItemColor: const Color(0xFF2563EB),
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
@@ -305,7 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Icon(
               Icons.account_balance_wallet,
               size: 90,
-              color: Colors.white.withOpacity(0.18),
+              color: Colors.white.withValues(alpha: 0.18),
             ),
           ),
           Column(

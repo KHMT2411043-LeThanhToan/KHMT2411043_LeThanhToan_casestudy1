@@ -1,66 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'database_helper.dart';
-import 'transaction_model.dart';
+import '../models/transaction_model.dart';
+import '../repositories/transaction_repository.dart';
 
-/// Nếu [existingTransaction] được truyền vào => màn hình chạy ở chế độ SỬA.
-/// Nếu để null => chạy ở chế độ THÊM MỚI.
+/// Màn hình THÊM giao dịch mới. (Sửa/xóa nằm ở edit_transaction_screen.dart)
 class AddTransactionScreen extends StatefulWidget {
-  final TransactionRecord? existingTransaction;
-
-  const AddTransactionScreen({super.key, this.existingTransaction});
-
-  bool get isEditMode => existingTransaction != null;
+  const AddTransactionScreen({super.key});
 
   @override
   State<AddTransactionScreen> createState() => _AddTransactionScreenState();
 }
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
+  final _repo = TransactionRepository.instance;
+
   bool _isExpense = true;
   bool _isLoadingCategories = true;
 
   List<CategoryRecord> _allCategories = [];
   CategoryRecord? _selectedCategory;
-  late DateTime _selectedDate;
+  DateTime _selectedDate = DateTime.now();
 
-  final TextEditingController _amountController = TextEditingController();
-  final TextEditingController _noteController = TextEditingController();
+  final _amountController = TextEditingController();
+  final _noteController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-
-    final existing = widget.existingTransaction;
-    if (existing != null) {
-      _isExpense = existing.categoryType == 'expense';
-      _selectedDate = _parseDate(existing.date);
-      _amountController.text = _formatNumber(existing.amount);
-      _noteController.text = existing.note ?? '';
-    } else {
-      _selectedDate = DateTime.now();
-    }
-
     _loadCategories();
   }
 
   Future<void> _loadCategories() async {
-    final rows = await DatabaseHelper.instance.getCategories();
-    final categories = rows.map((e) => CategoryRecord.fromMap(e)).toList();
-
+    final categories = await _repo.getCategories();
+    if (!mounted) return;
     setState(() {
       _allCategories = categories;
       _isLoadingCategories = false;
-
-      final existing = widget.existingTransaction;
-      if (existing != null) {
-        _selectedCategory = categories.firstWhere(
-              (c) => c.id == existing.categoryId,
-          orElse: () => _currentCategories.first,
-        );
-      } else {
-        _selectedCategory = _currentCategories.first;
-      }
+      _selectedCategory =
+      _currentCategories.isNotEmpty ? _currentCategories.first : null;
     });
   }
 
@@ -68,23 +45,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       .where((c) => c.type == (_isExpense ? 'expense' : 'income'))
       .toList();
 
-  DateTime _parseDate(String ddMMyyyy) {
-    final parts = ddMMyyyy.split('/');
-    return DateTime(
-      int.parse(parts[2]),
-      int.parse(parts[1]),
-      int.parse(parts[0]),
-    );
-  }
-
-  String _formatNumber(int value) {
-    final str = value.toString();
-    final buffer = StringBuffer();
-    for (int i = 0; i < str.length; i++) {
-      if (i != 0 && (str.length - i) % 3 == 0) buffer.write('.');
-      buffer.write(str[i]);
-    }
-    return buffer.toString();
+  void _switchType(bool isExpense) {
+    setState(() {
+      _isExpense = isExpense;
+      _selectedCategory =
+      _currentCategories.isNotEmpty ? _currentCategories.first : null;
+    });
   }
 
   @override
@@ -101,14 +67,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
+    if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _save() async {
-    final rawAmount = _amountController.text.replaceAll('.', '').trim();
-    final amount = int.tryParse(rawAmount);
+    final amount =
+    int.tryParse(_amountController.text.replaceAll('.', '').trim());
 
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -116,7 +80,6 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       );
       return;
     }
-
     if (_selectedCategory == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng chọn danh mục')),
@@ -124,74 +87,30 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       return;
     }
 
-    final data = {
-      'category_id': _selectedCategory!.id,
-      'amount': amount,
-      'date': DateFormat('dd/MM/yyyy').format(_selectedDate),
-      'note': _noteController.text.trim().isEmpty
-          ? null
-          : _noteController.text.trim(),
-    };
-
-    if (widget.isEditMode) {
-      await DatabaseHelper.instance
-          .updateTransaction(widget.existingTransaction!.id, data);
-    } else {
-      await DatabaseHelper.instance.insertTransaction(data);
-    }
+    final note = _noteController.text.trim();
+    await _repo.add(
+      categoryId: _selectedCategory!.id,
+      amount: amount,
+      date: DateFormat('dd/MM/yyyy').format(_selectedDate),
+      note: note.isEmpty ? null : note,
+    );
 
     if (!mounted) return;
-    Navigator.pop(context, true); // true = báo cho màn hình trước cần tải lại
-  }
-
-  void _confirmDelete() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Xóa giao dịch'),
-        content: const Text('Bạn có chắc muốn xóa giao dịch này không?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx); // đóng dialog
-              await DatabaseHelper.instance
-                  .deleteTransaction(widget.existingTransaction!.id);
-              if (!mounted) return;
-              Navigator.pop(context, true);
-            },
-            child: const Text('Xóa', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+    Navigator.pop(context, true); // true = màn hình trước cần tải lại
   }
 
   @override
   Widget build(BuildContext context) {
-    final isEdit = widget.isEditMode;
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        title: Text(
-          isEdit ? 'Sửa giao dịch' : 'Thêm giao dịch',
-          style: const TextStyle(
-              color: Colors.black, fontWeight: FontWeight.bold),
+        title: const Text(
+          'Thêm giao dịch',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
-        actions: [
-          if (isEdit)
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red),
-              onPressed: _confirmDelete,
-            ),
-        ],
       ),
       body: _isLoadingCategories
           ? const Center(child: CircularProgressIndicator())
@@ -206,10 +125,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     label: 'Chi tiêu',
                     selected: _isExpense,
                     color: const Color(0xFFE11D48),
-                    onTap: () => setState(() {
-                      _isExpense = true;
-                      _selectedCategory = _currentCategories.first;
-                    }),
+                    onTap: () => _switchType(true),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -218,19 +134,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                     label: 'Thu nhập',
                     selected: !_isExpense,
                     color: const Color(0xFF16A34A),
-                    onTap: () => setState(() {
-                      _isExpense = false;
-                      _selectedCategory = _currentCategories.first;
-                    }),
+                    onTap: () => _switchType(false),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 24),
-
-            const Text('Danh mục',
-                style:
-                TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const _Label('Danh mục'),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -259,17 +169,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       ),
                     );
                   }).toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedCategory = value);
-                  },
+                  onChanged: (v) => setState(() => _selectedCategory = v),
                 ),
               ),
             ),
             const SizedBox(height: 20),
-
-            const Text('Số tiền',
-                style:
-                TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const _Label('Số tiền'),
             const SizedBox(height: 8),
             TextField(
               controller: _amountController,
@@ -278,15 +183,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 hintText: 'Nhập số tiền',
                 suffixText: 'đ',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
             const SizedBox(height: 20),
-
-            const Text('Ngày giao dịch',
-                style:
-                TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const _Label('Ngày giao dịch'),
             const SizedBox(height: 8),
             InkWell(
               onTap: _pickDate,
@@ -307,10 +208,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            const Text('Ghi chú',
-                style:
-                TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const _Label('Ghi chú'),
             const SizedBox(height: 8),
             TextField(
               controller: _noteController,
@@ -318,12 +216,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               decoration: InputDecoration(
                 hintText: 'Nhập ghi chú (tùy chọn)',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
             const SizedBox(height: 32),
-
             SizedBox(
               width: double.infinity,
               height: 52,
@@ -333,14 +229,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   backgroundColor: const Color(0xFF2563EB),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                      borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text(
-                  'Lưu',
-                  style:
-                  TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: const Text('Lưu',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -348,6 +241,15 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       ),
     );
   }
+}
+
+class _Label extends StatelessWidget {
+  final String text;
+  const _Label(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15));
 }
 
 class _ToggleButton extends StatelessWidget {
